@@ -19,8 +19,7 @@ class HNSW(object):
     # self._graphs[level][i] contains a {j: dist} dictionary,
     # where j is a neighbor of i and dist is distance
 
-    def __init__(self, d, m=5, ef=200, m0=None, level_mult=None,
-                 heuristic=True, vectorized=False):
+    def __init__(self, distance_type, m=5, ef=200, m0=None, heuristic=True, vectorized=False):
         """d the dissimilarity function
 
         If vectorized is true, d can be called on lists as second argument
@@ -30,29 +29,42 @@ class HNSW(object):
 
         self.data = []
 
-        if vectorized:
-            def d1(x, y):
-                return d(x, [y])[0]
-
-            self.distance = d1
-            self.vectorized_distance = d
+        if distance_type == "l2":
+            # l2 distance
+            def l2_distance(a, b):
+                return np.linalg.norm(a - b)
+            distance_func = l2_distance
+        elif distance_type == "cosine":
+            # cosine distance
+            def cosine_distance(a, b):
+                return np.dot(a, b)/(np.linalg.norm(a)*(np.linalg.norm(b)))
+            distance_func = cosine_distance
         else:
-            self.distance = d
+            raise TypeError('Please check your distance type!')
+        
+        if vectorized:
+            def distance_1(x, y):
+                return distance_func(x, [y])[0]
 
-            def vd(x, ys):
-                return [d(x, y) for y in ys]
+            self.distance = distance_1
+            self.vectorized_distance = distance_func
+        else:
+            self.distance = distance_func
 
-            self.vectorized_distance = vd
+            def vectorized_distance(x, ys):
+                return [distance_func(x, y) for y in ys]
+
+            self.vectorized_distance = vectorized_distance
 
         self._m = m
         self._ef = ef
         self._m0 = 2 * m if m0 is None else m0
-        self._level_mult = 1 / log2(m) if level_mult is None else level_mult
+        self._level_mult = 1 / log2(m)
         self._graphs = []
         self._enter_point = None
 
-        self._select = (self._select_heuristic if heuristic
-                        else self._select_naive)
+        self._select = (
+            self._select_heuristic if heuristic else self._select_naive)
 
     def add(self, elem, ef=None):
         """Add elem to the data structure"""
@@ -60,7 +72,7 @@ class HNSW(object):
         if ef is None:
             ef = self._ef
 
-        d = self.distance
+        distance = self.distance
         data = self.data
         graphs = self._graphs
         point = self._enter_point
@@ -68,33 +80,34 @@ class HNSW(object):
 
         # level at which the element will be inserted
         level = int(-log2(random()) * self._level_mult) + 1
+        print("level: %d" % level)
 
         # elem will be at data[idx]
         idx = len(data)
         data.append(elem)
 
         if point is not None:  # the HNSW is not empty, we have an entry point
-            dist = d(elem, data[point])
+            dist = distance(elem, data[point])
             # for all levels in which we dont have to insert elem,
             # we search for the closest neighbor
-            for g in reversed(graphs[level:]):
-                point, dist = self._search_graph_ef1(elem, point, dist, g)
+            for layer in reversed(graphs[level:]):
+                point, dist = self._search_graph_ef1(elem, point, dist, layer)
             # at these levels we have to insert elem; ep is a heap of
             # entry points.
             ep = [(-dist, point)]
-            g0 = graphs[0]
-            for g in reversed(graphs[:level]):
-                level_m = m if g is not g0 else self._m0
+            layer0 = graphs[0]
+            for layer in reversed(graphs[:level]):
+                level_m = m if layer is not layer0 else self._m0
                 # navigate the graph and update ep with the closest
                 # nodes we find
-                ep = self._search_graph(elem, ep, g, ef)
+                ep = self._search_graph(elem, ep, layer, ef)
                 # insert in g[idx] the best neighbors
-                g[idx] = g_idx = {}
-                self._select(g_idx, ep, level_m, g, heap=True)
-                # assert len(g_idx) <= level_m
+                layer[idx] = layer_idx = {}
+                self._select(layer_idx, ep, level_m, layer, heap=True)
+                # assert len(layer_idx) <= level_m
                 # insert backlinks to the new node
-                for j, dist in g_idx.items():
-                    self._select(g[j], (idx, dist), level_m, g)
+                for j, dist in layer_idx.items():
+                    self._select(layer[j], (idx, dist), level_m, layer)
                     # assert len(g[j]) <= level_m
                 # assert all(e in g for _, e in ep)
         for i in range(len(graphs), level):
@@ -117,7 +130,7 @@ class HNSW(object):
         if ef is None:
             ef = self._ef
 
-        d = self.distance
+        distance = self.distance
         data = self.data
         graphs = self._graphs
         point = self._enter_point
@@ -128,31 +141,32 @@ class HNSW(object):
         data.append(elem)
 
         if point is not None:
-            dist = d(elem, data[point])
+            dist = distance(elem, data[point])
             pd = [(point, dist)]
             # navigate from the top to the bottom looking for the closest
             # node in each graph, and save in pd the closest found
-            for g in reversed(graphs[1:]):
-                point, dist = self._search_graph_ef1(elem, point, dist, g)
+            for layer in reversed(graphs[1:]):
+                point, dist = self._search_graph_ef1(elem, point, dist, layer)
                 pd.append((point, dist))
             # now go from bottom to the last level in which we should
             # add the new node
-            for level, g in enumerate(graphs):
+            for level, layer in enumerate(graphs):
                 level_m = m0 if level == 0 else m
                 # find the candidate neighbors and select which ones to insert
-                candidates = self._search_graph(elem, [(-dist, point)], g, ef)
-                g[idx] = g_idx = {}
-                self._select(g_idx, candidates, level_m, g, heap=True)
+                candidates = self._search_graph(
+                    elem, [(-dist, point)], layer, ef)
+                layer[idx] = layer_idx = {}
+                self._select(layer_idx, candidates, level_m, layer, heap=True)
                 # add reverse edges
-                for j, dist in g_idx.items():
-                    self._select(g[j], [idx, dist], level_m, g)
-                    assert len(g[j]) <= level_m
+                for j, dist in layer_idx.items():
+                    self._select(layer[j], [idx, dist], level_m, layer)
+                    assert len(layer[j]) <= level_m
                 # stop here if the node has less than level_m neighbors
-                if len(g_idx) < level_m:
+                if len(layer_idx) < level_m:
                     return
                 # or if at least one of them is in the upper level
                 if level < len(graphs) - 1:
-                    if any(p in graphs[level + 1] for p in g_idx):
+                    if any(p in graphs[level + 1] for p in layer_idx):
                         return
                 point, dist = pd.pop()
         graphs.append({idx: {}})
@@ -161,7 +175,7 @@ class HNSW(object):
     def search(self, q, k=None, ef=None):
         """Find the k points closest to q."""
 
-        d = self.distance
+        distance = self.distance
         graphs = self._graphs
         point = self._enter_point
 
@@ -171,10 +185,10 @@ class HNSW(object):
         if point is None:
             raise ValueError("Empty graph")
 
-        dist = d(q, self.data[point])
+        dist = distance(q, self.data[point])
         # look for the closest neighbor from the top to the 2nd level
-        for g in reversed(graphs[1:]):
-            point, dist = self._search_graph_ef1(q, point, dist, g)
+        for layer in reversed(graphs[1:]):
+            point, dist = self._search_graph_ef1(q, point, dist, layer)
         # look for ef neighbors in the bottom level
         ep = self._search_graph(q, [(-dist, point)], graphs[0], ef)
 
@@ -185,10 +199,10 @@ class HNSW(object):
 
         return [(idx, -md) for md, idx in ep]
 
-    def _search_graph_ef1(self, q, entry, dist, g):
+    def _search_graph_ef1(self, q, entry, dist, layer):
         """Equivalent to _search_graph when ef=1."""
 
-        vd = self.vectorized_distance
+        vectorized_distance = self.vectorized_distance
         data = self.data
 
         best = entry
@@ -200,9 +214,9 @@ class HNSW(object):
             dist, c = heappop(candidates)
             if dist > best_dist:
                 break
-            edges = [e for e in g[c] if e not in visited]
+            edges = [e for e in layer[c] if e not in visited]
             visited.update(edges)
-            dists = vd(q, [data[e] for e in edges])
+            dists = vectorized_distance(q, [data[e] for e in edges])
             for e, dist in zip(edges, dists):
                 if dist < best_dist:
                     best = e
@@ -212,9 +226,9 @@ class HNSW(object):
 
         return best, best_dist
 
-    def _search_graph(self, q, ep, g, ef):
+    def _search_graph(self, q, ep, layer, ef):
 
-        vd = self.vectorized_distance
+        vectorized_distance = self.vectorized_distance
         data = self.data
 
         candidates = [(-mdist, p) for mdist, p in ep]
@@ -227,9 +241,9 @@ class HNSW(object):
             if dist > -mref:
                 break
 
-            edges = [e for e in g[c] if e not in visited]
+            edges = [e for e in layer[c] if e not in visited]
             visited.update(edges)
-            dists = vd(q, [data[e] for e in edges])
+            dists = vectorized_distance(q, [data[e] for e in edges])
             for e, dist in zip(edges, dists):
                 mdist = -dist
                 if len(ep) < ef:
@@ -243,7 +257,7 @@ class HNSW(object):
 
         return ep
 
-    def _select_naive(self, d, to_insert, m, g, heap=False):
+    def _select_naive(self, d, to_insert, m, layer, heap=False):
 
         if not heap:  # shortcut when we've got only one thing to insert
             idx, dist = to_insert
@@ -334,15 +348,8 @@ if __name__ == "__main__":
     data = np.float32(np.random.random((num_elements, dim)))
     data_labels = np.arange(num_elements)
 
-    from numpy.linalg import norm
-
-
-    def d(a, b):
-        return norm(a - b)
-
-
-    hnsw = HNSW(d, m0=48, ef=200)
-
-    hnsw.add(data)
-    idx = hnsw.search(np.float32(np.random.random((1, dim))), 10, ef=200)
+    hnsw = HNSW('l22', m0=48, ef=200)
+    for i in data:
+        hnsw.add(i)
+    idx = hnsw.search(np.float32(np.random.random((1, dim))), 10)
     print(idx)
