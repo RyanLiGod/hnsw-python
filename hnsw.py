@@ -5,6 +5,8 @@ from math import log2
 from operator import itemgetter
 from random import random
 
+import numpy as np
+
 
 class HNSW(object):
     """Hierarchical Navigable Small World (HNSW) data structure.
@@ -19,6 +21,18 @@ class HNSW(object):
     # self._graphs[level][i] contains a {j: dist} dictionary,
     # where j is a neighbor of i and dist is distance
 
+    def l2_distance(self, a, b):
+        return np.linalg.norm(a - b)
+    
+    def cosine_distance(self, a, b):
+        return np.dot(a, b)/(np.linalg.norm(a)*(np.linalg.norm(b)))
+
+    def _distance(self, x, y):
+        return self.distance_func(x, [y])[0]
+
+    def vectorized_distance_(self, x, ys):
+        return [self.distance_func(x, y) for y in ys]
+    
     def __init__(self, distance_type, m=5, ef=200, m0=None, heuristic=True, vectorized=False):
         """d the dissimilarity function
 
@@ -28,33 +42,30 @@ class HNSW(object):
         See other parameters in http://arxiv.org/pdf/1603.09320v2.pdf"""
 
         self.data = []
-
         if distance_type == "l2":
             # l2 distance
-            def l2_distance(a, b):
-                return np.linalg.norm(a - b)
-            distance_func = l2_distance
+            distance_func = self.l2_distance
         elif distance_type == "cosine":
             # cosine distance
-            def cosine_distance(a, b):
-                return np.dot(a, b)/(np.linalg.norm(a)*(np.linalg.norm(b)))
-            distance_func = cosine_distance
+            distance_func = self.cosine_distance
         else:
             raise TypeError('Please check your distance type!')
         
-        if vectorized:
-            def distance_1(x, y):
-                return distance_func(x, [y])[0]
+        self.distance_func = distance_func
 
-            self.distance = distance_1
+        if vectorized:
+            # def distance_1(x, y):
+            #     return distance_func(x, [y])[0]
+
+            self.distance = self._distance
             self.vectorized_distance = distance_func
         else:
             self.distance = distance_func
 
-            def vectorized_distance(x, ys):
-                return [distance_func(x, y) for y in ys]
+            # def vectorized_distance(x, ys):
+                # return [distance_func(x, y) for y in ys]
 
-            self.vectorized_distance = vectorized_distance
+            self.vectorized_distance = self.vectorized_distance_
 
         self._m = m
         self._ef = ef
@@ -80,7 +91,7 @@ class HNSW(object):
 
         # level at which the element will be inserted
         level = int(-log2(random()) * self._level_mult) + 1
-        print("level: %d" % level)
+        # print("level: %d" % level)
 
         # elem will be at data[idx]
         idx = len(data)
@@ -92,8 +103,7 @@ class HNSW(object):
             # we search for the closest neighbor
             for layer in reversed(graphs[level:]):
                 point, dist = self._search_graph_ef1(elem, point, dist, layer)
-            # at these levels we have to insert elem; ep is a heap of
-            # entry points.
+            # at these levels we have to insert elem; ep is a heap of entry points.
             ep = [(-dist, point)]
             layer0 = graphs[0]
             for layer in reversed(graphs[:level]):
@@ -340,16 +350,27 @@ class HNSW(object):
 
 if __name__ == "__main__":
     dim = 200
-    num_elements = 100
-
-    import numpy as np
+    num_elements = 500
 
     # Generating sample data
-    data = np.float32(np.random.random((num_elements, dim)))
+    data = np.array(np.float32(np.random.random((num_elements, dim))))
     data_labels = np.arange(num_elements)
 
-    hnsw = HNSW('l22', m0=48, ef=200)
+    import pickle
+
+    hnsw = HNSW('l2', m0=48, ef=200)
+    import time
+    time_start = time.time()
     for i in data:
         hnsw.add(i)
+
+    fn = 'a.ind'
+    with open(fn, 'wb+') as f:
+        picklestring = pickle.dump(hnsw, f)
+
+    add_point_time = time.time()
     idx = hnsw.search(np.float32(np.random.random((1, dim))), 10)
+    search_time = time.time()
     print(idx)
+    print("add point time: %f" % (add_point_time - time_start))
+    print("searchtime: %f" % (search_time - add_point_time))
