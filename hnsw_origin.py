@@ -11,15 +11,6 @@ import numpy as np
 
 
 class HNSW(object):
-    """Hierarchical Navigable Small World (HNSW) data structure.
-
-    Based on the work by Yury Malkov and Dmitry Yashunin, available at
-    http://arxiv.org/pdf/1603.09320v2.pdf
-
-    HNSWs allow performing approximate nearest neighbor search with
-    arbitrary data and non-metric dissimilarity functions.
-    """
-
     # self._graphs[level][i] contains a {j: dist} dictionary,
     # where j is a neighbor of i and dist is distance
 
@@ -41,13 +32,6 @@ class HNSW(object):
         return [self.distance_func(x, y) for y in ys]
 
     def __init__(self, distance_type, m=5, ef=200, m0=None, heuristic=True, vectorized=False):
-        """d the dissimilarity function
-
-        If vectorized is true, d can be called on lists as second argument
-        to compare multiple elements with the first.
-
-        See other parameters in http://arxiv.org/pdf/1603.09320v2.pdf"""
-
         self.data = []
         if distance_type == "l2":
             # l2 distance
@@ -85,7 +69,6 @@ class HNSW(object):
             self._select_heuristic if heuristic else self._select_naive)
 
     def add(self, elem, ef=None):
-        """Add elem to the data structure"""
 
         if ef is None:
             ef = self._ef
@@ -175,7 +158,6 @@ class HNSW(object):
         self._enter_point = idx
 
     def search(self, q, k=None, ef=None):
-        """Find the k points closest to q."""
 
         distance = self.distance
         graphs = self._graphs
@@ -202,7 +184,6 @@ class HNSW(object):
         return [(idx, -md) for md, idx in ep]
 
     def _search_graph_ef1(self, q, entry, dist, layer):
-        """Equivalent to _search_graph when ef=1."""
 
         vectorized_distance = self.vectorized_distance
         data = self.data
@@ -331,7 +312,6 @@ class HNSW(object):
             assert len(d) == m
 
     def __getitem__(self, idx):
-        """Returns a list of known neighbors of node at index idx."""
 
         for g in self._graphs:
             try:

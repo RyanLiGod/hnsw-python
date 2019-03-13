@@ -11,15 +11,6 @@ import numpy as np
 
 
 class HNSW(object):
-    """Hierarchical Navigable Small World (HNSW) data structure.
-
-    Based on the work by Yury Malkov and Dmitry Yashunin, available at
-    http://arxiv.org/pdf/1603.09320v2.pdf
-
-    HNSWs allow performing approximate nearest neighbor search with
-    arbitrary data and non-metric dissimilarity functions.
-    """
-
     # self._graphs[level][i] contains a {j: dist} dictionary,
     # where j is a neighbor of i and dist is distance
 
@@ -41,13 +32,6 @@ class HNSW(object):
         return [self.distance_func(x, y) for y in ys]
 
     def __init__(self, distance_type, m=5, ef=200, m0=None, heuristic=True, vectorized=False):
-        """d the dissimilarity function
-
-        If vectorized is true, d can be called on lists as second argument
-        to compare multiple elements with the first.
-
-        See other parameters in http://arxiv.org/pdf/1603.09320v2.pdf"""
-
         self.data = []
         if distance_type == "l2":
             # l2 distance
@@ -85,7 +69,6 @@ class HNSW(object):
             self._select_heuristic if heuristic else self._select_naive)
 
     def add(self, elem, ef=None):
-        """Add elem to the data structure"""
 
         if ef is None:
             ef = self._ef
@@ -261,7 +244,7 @@ class HNSW(object):
 
     def _select_naive(self, d, to_insert, m, layer, heap=False):
 
-        if not heap:  # shortcut when we've got only one thing to insert
+        if not heap:
             idx, dist = to_insert
             assert idx not in d
             if len(d) < m:
@@ -273,7 +256,6 @@ class HNSW(object):
                     d[idx] = dist
             return
 
-        # so we have more than one item to insert, it's a bit more tricky
         assert not any(idx in d for _, idx in to_insert)
         to_insert = nlargest(m, to_insert)  # smallest m distances
         unchecked = m - len(d)
@@ -331,7 +313,6 @@ class HNSW(object):
             assert len(d) == m
 
     def __getitem__(self, idx):
-        """Returns a list of known neighbors of node at index idx."""
 
         for g in self._graphs:
             try:
