@@ -341,8 +341,8 @@ class HNSW(object):
 
 
 if __name__ == "__main__":
-    dim = 25
-    num_elements = 1000
+    # dim = 200
+    # num_elements = 100
 
     import h5py
     import time
@@ -354,60 +354,40 @@ if __name__ == "__main__":
     neighbors = f['neighbors']
     test = f['test']
     train = f['train']
+    train_len = train.shape[0]
     pprint.pprint(list(f.keys()))
     pprint.pprint(train.shape)
     # pprint.pprint()
 
-    # Generating sample data
-    data = np.array(np.float32(np.random.random((num_elements, dim))))
-    data_labels = np.arange(num_elements)
+    # # Generating sample data
+    # data = np.array(np.float32(np.random.random((num_elements, dim))))
+    # data_labels = np.arange(num_elements)
 
     
-    hnsw = HNSW('cosine', m0=32, ef=300)
+    hnsw = HNSW('cosine', m0=16, ef=128)
     
+    widgets = ['Progress: ',Percentage(), ' ', Bar('#'),' ', Timer(),
+        ' ', ETA()]
+    pbar = ProgressBar(widgets=widgets, maxval=train_len).start()
+    for i in range(train_len):
+        # if i == 1000:
+        #     break
+        hnsw.add(train[i])
+        pbar.update(i + 1)
+    pbar.finish()
 
-    # widgets = ['Progress: ',Percentage(), ' ', Bar('#'),' ', Timer(),
-    #     ' ', ETA()]
-    # pbar = ProgressBar(widgets=widgets, maxval=train.shape[0]).start()
-    # for i in range(train.shape[0]):
-    #     # if i == 1000:
-    #     #     break
-    #     hnsw.balanced_add(train[i])
-    #     pbar.update(i + 1)
-    # pbar.finish()
+    with open('glove-25-angular-origin-128.ind', 'wb') as f:
+        picklestring = pickle.dump(hnsw, f, pickle.HIGHEST_PROTOCOL)
 
-    for index, i in enumerate(data):
-        if index % 1000 == 0:
-            pprint.pprint('train No.%d' % index)
-        hnsw.balanced_add(i)
-    #     # hnsw.add(i)
-
-    # with open('glove-25-angular-balanced-128.ind', 'wb') as f:
-    #     picklestring = pickle.dump(hnsw, f, pickle.HIGHEST_PROTOCOL)
-
-    # add_point_time = time.time()
-    # idx = hnsw.search(np.float32(np.random.random((1, 25))), 1)
-    # search_time = time.time()
+    add_point_time = time.time()
+    idx = hnsw.search(np.float32(np.random.random((1, 25))), 10)
+    search_time = time.time()
     # pprint.pprint(idx)
     # pprint.pprint("add point time: %f" % (add_point_time - time_start))
-    # pprint.pprint("searchtime: %f" % (search_time - add_point_time))
+    pprint.pprint("searchtime: %f" % (search_time - add_point_time))
     # print('\n')
     # # pprint.pprint(hnsw._graphs)
     # for n in hnsw._graphs:
     #     pprint.pprint(len(n))
     # pprint.pprint(len(hnsw._graphs))
     # print(hnsw.data)
-
-# for index, i in enumerate(data):
-#     idx = hnsw.search(i, 1)
-#     pprint.pprint(idx[0][0])
-#     pprint.pprint(i)
-#     pprint.pprint(hnsw.data[idx[0][0]])
-
-pprint.pprint('------------------------------')
-# pprint.pprint(hnsw.data)
-# pprint.pprint('------------------------------')
-# pprint.pprint(data)
-# pprint.pprint('------------------------------')
-# pprint.pprint(hnsw._graphs)
-# pprint.pprint(len(hnsw._graphs))
