@@ -29,6 +29,7 @@ class HNSW(object):
         return self.distance_func(x, [y])[0]
 
     def vectorized_distance_(self, x, ys):
+        pprint.pprint([self.distance_func(x, y) for y in ys])
         return [self.distance_func(x, y) for y in ys]
 
     def __init__(self, distance_type, m=5, ef=200, m0=None, heuristic=True, vectorized=False):
@@ -45,17 +46,10 @@ class HNSW(object):
         self.distance_func = distance_func
 
         if vectorized:
-            # def distance_1(x, y):
-            #     return distance_func(x, [y])[0]
-
             self.distance = self._distance
             self.vectorized_distance = distance_func
         else:
             self.distance = distance_func
-
-            # def vectorized_distance(x, ys):
-            # return [distance_func(x, y) for y in ys]
-
             self.vectorized_distance = self.vectorized_distance_
 
         self._m = m
@@ -95,6 +89,7 @@ class HNSW(object):
                 point, dist = self._search_graph_ef1(elem, point, dist, layer)
             # at these levels we have to insert elem; ep is a heap of entry points.
             ep = [(-dist, point)]
+            # pprint.pprint(ep)
             layer0 = graphs[0]
             for layer in reversed(graphs[:level]):
                 level_m = m if layer is not layer0 else self._m0
@@ -225,7 +220,7 @@ class HNSW(object):
             mref = ep[0][0]
             if dist > -mref:
                 break
-
+            # pprint.pprint(layer[c])
             edges = [e for e in layer[c] if e not in visited]
             visited.update(edges)
             dists = vectorized_distance(q, [data[e] for e in edges])
@@ -344,7 +339,7 @@ if __name__ == "__main__":
     data_labels = np.arange(num_elements)
 
     
-    hnsw = HNSW('cosine', m0=32, ef=300)
+    hnsw = HNSW('cosine', m0=5, ef=10)
     
 
     # widgets = ['Progress: ',Percentage(), ' ', Bar('#'),' ', Timer(),
@@ -360,8 +355,8 @@ if __name__ == "__main__":
     for index, i in enumerate(data):
         if index % 1000 == 0:
             pprint.pprint('train No.%d' % index)
-        hnsw.balanced_add(i)
-    #     # hnsw.add(i)
+        # hnsw.balanced_add(i)
+        hnsw.add(i)
 
     # with open('glove-25-angular-balanced-128.ind', 'wb') as f:
     #     picklestring = pickle.dump(hnsw, f, pickle.HIGHEST_PROTOCOL)
@@ -385,7 +380,7 @@ if __name__ == "__main__":
 #     pprint.pprint(i)
 #     pprint.pprint(hnsw.data[idx[0][0]])
 
-pprint.pprint('------------------------------')
+# pprint.pprint('------------------------------')
 # pprint.pprint(hnsw.data)
 # pprint.pprint('------------------------------')
 # pprint.pprint(data)
